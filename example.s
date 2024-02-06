@@ -1,12 +1,14 @@
 ;*****************************************************************
-; PPU Registers : $2000 - $2007 and $4014
+;                           PPU
+;*****************************************************************
 
+; Addresses $2000 - $2007 and $4014
 ; The PPU has its own memory within the CPU known as Video RAM (VRAM), 
 ; where the PPU can allocate up to 64kb of memory, though the VRAM only has 16kb. 
 
 ; Reading and writing into the PPU is done by using the I/O addresses $2006 and $2007,
 ; where $2006 has two writes and $2007 read and write.
-;*****************************************************************
+
 PPU_CONTROL 		= $2000 ; Write
 PPU_MASK 			= $2001 ; Write
 PPU_STATUS 			= $2002 ; Read
@@ -18,7 +20,7 @@ PPU_VRAM_IO 		= $2007 ; Read/Write
 SPRITE_DMA 			= $4014 ; Write
 
 ;*****************************************************************
-; APU Registers 
+;                           APU
 ;*****************************************************************
 APU_DM_CONTROL 		= $4010
 APU_CLOCK 			= $4015
@@ -36,7 +38,7 @@ PAD_L 				= $40
 PAD_R 				= $80
 
 ;*****************************************************************
-; Header : Indicates which mappers we're using and whether the cartidge contains SRAM for saving game progress. 
+;                        HEADER 
 ;*****************************************************************
 .segment "HEADER" 
 INES_MAPPER 		= 0 ; Which NES Memory Mapper to use
@@ -51,7 +53,7 @@ INES_SRAM   		= 0 ; Set true if the cartridge contains an SRAM, otherwise false
 .byte $0, $0, $0, $0, $0, $0, $0, $0 ; Padding
 
 ;*****************************************************************
-; Vectors : Code that searches for interrupts, here using NMI, Reset and IRQ
+;                        VECTORS 
 ;*****************************************************************
 .segment "VECTORS"
 .word nmi   ; Non-maskable interrupt, generated for every V-Blank that occurs at the end of each frame
@@ -59,7 +61,7 @@ INES_SRAM   		= 0 ; Set true if the cartridge contains an SRAM, otherwise false
 .word irq   ; Maskable interrupt, triggered when a BRK occurs
 
 ;*****************************************************************
-; Zero Page : Contains the most important and used variables, but because it's stored in RAM anything allocated will be wiped after turning off system. It's just for reservation!
+;                       ZERO PAGE
 ;*****************************************************************
 .segment "ZEROPAGE"
 nmi_ready:  .res 1 ; 1 updates the frame | 2 turn rendering off
@@ -68,12 +70,14 @@ d_x:        .res 1 ; X velocity of ball
 d_y:        .res 1 ; Y velocity of ball
 
 ;*****************************************************************
-; Sprite Object Attribute Memory (OAM) : A table (X, Y) that holds (Position, Attributes) of the 8x8 sprites. 
+;              Sprite Object Attribute Memory (OAM) 
 ;*****************************************************************
 .segment "OAM"
 oam:       .res 256 
 
-
+;*****************************************************************
+;                        READ ONLY DATA
+;*****************************************************************
 .segment "RODATA"
 default_palette:
 .byte $0F, $15, $26, $37 ; background 0 set to purple/pink
@@ -88,16 +92,28 @@ default_palette:
 welcome_txt:
 .byte 'W', 'E', 'L', 'C', 'O', 'M', 'E', 0
 
+;*****************************************************************
+;                        TILES (ROM)
+;*****************************************************************
 .segment "TILES" ; Stored into ROM data
 .incbin "example.chr" ; include binary file that is copied into our final NES ROM
 
+;*****************************************************************
+;                        BSS (RAM)
+;*****************************************************************
 .segment "BSS" ; RAM
 palette: .res 32 ; Current palette buffer
 
+;*****************************************************************
+;                          IRQ
+;*****************************************************************
 .segment "CODE"
 irq: 
     rti
 
+;*****************************************************************
+;                       ENTRY POINT
+;*****************************************************************
 ; In order to initialize the NES, we first need to make sure nothing is on, that everything is cleared. 
 ; The PPU takes 29658 cycles before it's ready for any commands, so it's good practice to use a loop to wait 
 
@@ -123,49 +139,52 @@ irq:
 
     ; Wait for the first v blank
     bit PPU_STATUS 
-    wait_vblank:
-        bit PPU_STATUS
-        bpl wait_vblank
+wait_vblank:
+    bit PPU_STATUS
+    bpl wait_vblank
 
     lda #0
     ldx #0
 
-    ; The X register has 8 bits, set each to 0
-    clear_ram: 
-        sta $0000, x 
-        sta $0100, x 
-        sta $0200, x 
-        sta $0300, x         
-        sta $0400, x 
-        sta $0500, x 
-        sta $0600, x 
-        sta $0700, x
-        inx
-        bne clear_ram ; BNE executes if the Z register is cleared or empty
+; The X register has 8 bits, set each to 0
+clear_ram: 
+    sta $0000, x 
+    sta $0100, x 
+    sta $0200, x 
+    sta $0300, x         
+    sta $0400, x 
+    sta $0500, x 
+    sta $0600, x 
+    sta $0700, x
+    inx
+    bne clear_ram ; BNE executes if the Z register is cleared or empty
 
-        lda #255
-        ldx #0
-    clear_oam:
-        sta oam, x 
-        inx  
-        inx
-        inx
-        inx
-        bne clear_oam
-    
-    ; Wait for the second v blank
-    ; Vertical blank. The blink before each frame is rendered.
-    wait_vblank2:
-        bit PPU_STATUS
-        bpl wait_vblank2
+    lda #255
+    ldx #0
+clear_oam:
+    sta oam, x 
+    inx  
+    inx
+    inx
+    inx
+    bne clear_oam
 
-        lda #%10001000
-        sta PPU_CONTROL
+; Wait for the second v blank
+; Vertical blank. The blink before each frame is rendered.
+wait_vblank2:
+    bit PPU_STATUS
+    bpl wait_vblank2
 
-        jmp main
+    lda #%10001000
+    sta PPU_CONTROL
+
+    jmp main
         
 .endproc
 
+;*****************************************************************
+;                     NMI ROUTINE
+;*****************************************************************
 
 ; A frame is rendered row by row, from left to right, on a 256 x 240 pixel screen
 ; Vblank is an interrupt that occurs every 60fps on the NTSC and 50fps on the PAL. 
@@ -192,42 +211,46 @@ irq:
         stx nmi_ready
         jmp ppu_update_end
     
-    cont_render:
-        ldx #0
-        stx PPU_SPRRAM_ADDRESS
-        lda #>oam
-        sta SPRITE_DMA
+cont_render:
+    ldx #0
+    stx PPU_SPRRAM_ADDRESS
+    lda #>oam
+    sta SPRITE_DMA
 
-        ; Transfer current palette to the PPU
-        lda #%10001000 ; Set horizontal nametable increment
-        sta PPU_CONTROL 
-        lda PPU_STATUS
-        lda #$3F ; Set PPU address 
-        sta PPU_VRAM_ADDRESS2 
-        sta PPU_VRAM_ADDRESS1
-        ldx #0 ; Transfer the 32 ytes to VRAM
+    ; Transfer current palette to the PPU
+    lda #%10001000 ; Set horizontal nametable increment
+    sta PPU_CONTROL 
+    lda PPU_STATUS
+    lda #$3F ; Set PPU address 
+    sta PPU_VRAM_ADDRESS2 
+    stx PPU_VRAM_ADDRESS2
+    ldx #0 ; Transfer the 32 ytes to VRAM
 
-    loop:
-        lda palette, x
-        sta PPU_VRAM_IO
-        inx
-        cpx #32
-        bcc loop
+loop:
+    lda palette, x
+    sta PPU_VRAM_IO
+    inx
+    cpx #32
+    bcc loop
 
-        lda #%00011110
-        sta PPU_MASK
-        
-        ldx #0
-        stx nmi_ready
+    lda #%00011110
+    sta PPU_MASK
+    
+    ldx #0
+    stx nmi_ready
 
-    ppu_update_end:
-        pla
-        tay 
-        pla
-        tax
-        pla
-        rti
+ppu_update_end:
+    pla
+    tay 
+    pla
+    tax
+    pla
+    rti
 .endproc    
+
+;*****************************************************************
+;                    ENABLE PPU
+;*****************************************************************
 
 ; Enables the PPU for rendering, then waits for the next NMI
 .segment "CODE"
@@ -242,6 +265,10 @@ irq:
     rts
 .endproc
 
+;*****************************************************************
+;                    DISABLE PPU
+;*****************************************************************
+
 ; Disables the PPU in the case you need to transfer a large amount of data to the PPU's ram
 .segment "CODE"
 .proc ppu_off
@@ -255,6 +282,10 @@ irq:
     rts
 .endproc
 
+;*****************************************************************
+;                    CLEAR NAMETABLE
+;*****************************************************************
+
 ; Clears the name tables to clear the screen 
 .segment "CODE"
 .proc clear_nametable
@@ -262,7 +293,7 @@ irq:
     lda #$20
     sta PPU_VRAM_ADDRESS2
     lda #$00
-    sta PPU_VRAM_ADDRESS1
+    sta PPU_VRAM_ADDRESS2
 
     ; Clearing the name table 
     lda #0
@@ -284,6 +315,9 @@ irq:
     rts
 .endproc
 
+;*****************************************************************
+;                    READ CONTROLLER INPUT
+;*****************************************************************
 
 ; Each NES gamepad is polled seperately or one at a time.
 ; We read input from the gamepad by first writing int 1 and 0. 
@@ -316,6 +350,9 @@ irq:
         rts
 .endproc
 
+;*****************************************************************
+;                    MAIN LOOP
+;*****************************************************************
 .segment "CODE"
 .proc main
     ldx #0
@@ -333,7 +370,7 @@ irq:
         lda #$20
         sta PPU_VRAM_ADDRESS2
         lda #$8A
-        sta PPU_VRAM_ADDRESS1
+        sta PPU_VRAM_ADDRESS2
 
         ldx #0
 

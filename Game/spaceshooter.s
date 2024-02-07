@@ -568,8 +568,14 @@ SEED2: .res 2
 ;*****************************************************************
 .segment "CODE"
 .proc move_enemies 
-    ldy #0 
-    lda #0 
+    lda oam + 16 
+    sta cy1 
+    lda oam + 19 
+    sta cx1 
+    lda #4 
+    sta ch1 
+    lda #1 
+    sta cw1 
 @loop:
     lda enemydata, Y
     beq @skip
@@ -603,6 +609,29 @@ SEED2: .res 2
     adc #8
     sta oam + 8, x 
     sta oam + 12 , x 
+
+    lda oam + 16 
+    cmp #$FF
+    beq@skip
+
+    lda oam, x 
+    sta cy2 
+    lda oam + 3, x 
+    sta cx2 
+    lda #14 
+    sta cw2 
+    sta ch2 
+    jsr collision_test
+    bcc @skip
+
+    lda #$FF
+    sta oam + 16 
+    sta oam, x 
+    sta oam + 4, x 
+    sta oam + 8, x 
+    sta oam + 12, x 
+    lda #0 
+    sta enemydata, y 
 @skip:
     iny 
     cpy #10
@@ -610,6 +639,49 @@ SEED2: .res 2
     rts
 .endproc
 
+;*****************************************************************
+;                         COLLISION 
+;*****************************************************************
+.segment "ZEROPAGE"
+cx1: .res 1 
+cy1: .res 1 
+cw1: .res 1
+ch1: .res 1 
+
+cx2: .res 1 
+cy2: .res 1 
+cw2: .res 1
+ch2: .res 1 
+
+.segment "CODE"
+.proc collision_test
+    clc 
+    lda cx1 
+    adc cw1 
+    cmp cx2 
+    bcc @exit 
+    clc 
+    lda cx2 
+    adc cw2 
+    cmp cx1 
+    bcc @exit 
+
+    lda cy1
+    adc ch1 
+    cmp cy2 
+    bcc @exit 
+    clc 
+    lda cy2 
+    adc ch2 
+    cmp cy1 
+    bcc @exit 
+
+    sec 
+    rts 
+@exit:
+    clc 
+    rts 
+.endproc 
 
 ;*****************************************************************
 ;                           MAIN 

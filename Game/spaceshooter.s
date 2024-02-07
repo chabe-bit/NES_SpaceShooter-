@@ -73,13 +73,20 @@ default_palette:
 ;*****************************************************************
 ;                          NMI
 ;*****************************************************************
+.segment "ZEROPAGE"
+
+time: .res 1
+lasttime: .res 1
+
 .segment "CODE"
 .proc nmi
-    pha
+    pha 
     txa
     pha
     tya
     pha
+
+    inc time
 
     bit PPU_STATUS
     lda #>oam
@@ -245,7 +252,128 @@ loop:
 .endproc
 
 ;*****************************************************************
-;                         MAIN 
+;                         GAME SCREEN 
+;*****************************************************************
+.segment "RODATA"
+
+; Store our mountain data in our ROM
+game_screen_mountain: 
+.byte 001, 002, 003, 004, 001, 002, 003, 004, 001, 002, 003, 004, 001, 002, 003, 004
+.byte 001, 002, 003, 004, 001, 002, 003, 004, 001, 002, 003, 004, 001, 002, 003, 004
+
+; Store our score line in our ROM
+game_scren_scoreline:
+.byte "SCORE 0000000"
+
+.segment "CODE"
+.proc display_game_screen
+    jsr ppu_off ; Turn off the PPU once the frame is done drawing
+
+    jsr clear_nametable ; Clear name table 0
+
+    vram_set_address (NAME_TABLE_0_ADDRESS + 22 * 32) ; Output the mountain line 
+    assign_16i paddr, game_screen_mountain ; Set the address of the the mountain into our physical address
+    ldy #0 ; Set y register to 0 
+
+loop:
+    lda (paddr), y  
+    sta PPU_VRAM_IO
+    iny 
+    cpy #32
+    bne loop 
+
+    vram_set_address (NAME_TABLE_0_ADDRESS + 26 * 32)
+    ldy #0
+    lda #9
+
+loop2:
+    sta PPU_VRAM_IO
+    iny 
+    cpy #32 
+    bne loop2 
+
+    assign_16i paddr, game_scren_scoreline
+    ldy #0
+
+loop3:
+    lda (paddr), y 
+    sta PPU_VRAM_IO
+    iny 
+    cpy #13
+    bne loop3
+
+    jsr ppu_update
+    rts
+.endproc
+
+;*****************************************************************
+;                      PLAYER MOVEMENT
+;*****************************************************************
+.segment "CODE"
+.proc player_actions
+    jsr gamepad_poll
+    lda gamepad 
+    and #PAD_L
+    beq not_gamepad_left 
+        lda oam + 3
+        cmp #0
+        beq not_gamepad_left
+        sec 
+        sbc #2 
+
+        sta oam + 3
+        sta oam + 11 
+        clc 
+        adc #8
+        sta oam + 7
+        sta oam + 15
+
+not_gamepad_left:
+    lda gamepad 
+    and #PAD_R
+    beq not_gamepad_right
+        lda oam + 3
+        clc 
+        adc #12 
+        cmp #254 
+        beq not_gamepad_right
+        lda oam + 3
+        clc 
+        adc #2 
+
+        sta oam + 3
+        sta oam + 11 
+        clc 
+        adc #8 
+        sta oam + 7 
+        sta oam + 15
+
+not_gamepad_right:  
+    lda gamepad 
+    and #PAD_A 
+    beq not_gamepad_a
+        lda oam + 16
+        cmp #$FF
+        bne not_gamepad_a
+        lda #192
+        sta oam + 16
+        lda #4
+        sta oam + 17
+        lda #0
+        sta oam + 18
+        lda oam + 3
+        clc 
+        adc #6 
+        sta oam + 19
+
+not_gamepad_a:
+
+    rts
+.endproc
+
+
+;*****************************************************************
+;                           MAIN 
 ;*****************************************************************
 .segment "CODE"
 .proc main
@@ -267,6 +395,54 @@ paletteloop:
     
     jsr ppu_update
 
+titleloop:
+    jsr gamepad_poll
+    lda gamepad 
+    and #PAD_A | PAD_B | PAD_START | PAD_SELECT
+    beq titleloop
+
+    jsr display_game_screen
+
+    lda #192 
+
+    sta oam
+    sta oam + 4
+    lda #200
+    sta oam + 8 
+    sta oam + 12 
+
+    ldx #0 
+    stx oam + 1
+    inx 
+    stx oam + 5
+    inx 
+    stx oam + 9
+    inx 
+    stx oam + 13 
+
+    lda #%00000000
+    sta oam + 2
+    sta oam + 6 
+    sta oam + 10 
+    sta oam + 14 
+
+    lda #120
+    sta oam + 3 
+    sta oam + 11 
+    lda #128
+    sta oam + 7
+    sta oam + 15 
+
+    jsr ppu_update
 mainloop:
-    jmp mainloop
+    lda time 
+
+    cmp lasttime 
+    beq mainloop 
+    
+    sta lasttime 
+
+    jsr player_actions
+
+    jmp mainloop 
 .endproc

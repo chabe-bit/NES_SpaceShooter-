@@ -154,7 +154,7 @@ ppu_ctl1:		.res 1 ; PPU Control Register 2 Value
     lda #1
     sta JOYPAD1
     lda #0
-    sta JOYPAD2
+    sta JOYPAD1
     ldx #8
 
     loop:
@@ -166,7 +166,7 @@ ppu_ctl1:		.res 1 ; PPU Control Register 2 Value
         pla 
         
         ; Rotate carry into gamepad
-        ror
+        ror a
         dex
         bne loop
         sta gamepad

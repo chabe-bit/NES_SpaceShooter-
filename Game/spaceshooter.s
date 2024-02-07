@@ -75,8 +75,13 @@ default_palette:
 ;*****************************************************************
 .segment "ZEROPAGE"
 
-time: .res 1
-lasttime: .res 1
+time: .res 2
+lasttime: .res 1 
+level: .res 1
+animate: .res 1 
+enemydata: .res 20 
+enemycooldown: .res 1
+temp: .res 10
 
 .segment "CODE"
 .proc nmi
@@ -87,6 +92,9 @@ lasttime: .res 1
     pha
 
     inc time
+    bne :+
+        inc time + 1
+    :
 
     bit PPU_STATUS
     lda #>oam
@@ -392,6 +400,218 @@ not_gamepad_a:
 .endproc
 
 ;*****************************************************************
+;                        RANDOMIZE  
+;*****************************************************************
+.segment "ZEROPAGE"
+
+SEED0: .res 2 
+SEED2: .res 2
+
+.segment "CODE"
+.proc randomize 
+    lda SEED0
+    lsr 
+    rol SEED0 + 1 
+    bcc @noeor 
+@noeor:
+    sta SEED0
+    eor SEED0 + 1 
+    rts
+.endproc
+
+.proc rand  
+    jsr rand64k ; Factors of 65536 : 3, 5, 17 , 257 
+    jsr rand32k ; Factors of 32767 : 7, 31, 151 
+    lda SEED0 + 1  
+    eor SEED2 + 2 
+    tay 
+    lda SEED0
+    eor SEED2 
+    rts 
+.endproc 
+
+.proc rand64k
+    lda SEED0 + 1 
+    asl 
+    asl 
+    eor SEED0 + 1 
+    asl 
+    eor SEED0 + 1 
+    asl 
+    asl 
+    eor SEED0 + 1 
+    asl 
+    rol SEED0 
+    rol SEED0 + 1 
+    rts 
+.endproc 
+
+.proc rand32k
+    lda SEED2 + 1 
+    asl 
+    eor SEED2 + 1 
+    asl 
+    asl 
+    ror SEED2 
+    rol SEED2 + 1
+    rts 
+.endproc 
+
+;*****************************************************************
+;                        LEVEL SETUP 
+;*****************************************************************
+.segment "CODE"
+.proc setup_level 
+    lda #0 ; clear enemy data 
+    ldx #0
+@loop:
+    sta enemydata, x 
+    inx 
+    cpx #20 
+    bne @loop 
+    lda #20 ; set intial enemy cooldown 
+    sta enemycooldown
+    rts
+.endproc 
+
+;*****************************************************************
+;                        SPAWN ENEMIES
+;*****************************************************************
+.segment "CODE"
+.proc spawn_enemies
+    ldx enemycooldown
+    dex 
+    stx enemycooldown
+    cpx #0
+    beq :+
+        rts 
+    :
+
+    ldx #1 
+    stx enemycooldown 
+    lda level 
+    clc 
+    adc #1 
+    asl 
+    asl 
+    sta temp 
+    jsr rand 
+    tay 
+    cpy temp 
+    bcc :+
+        rts 
+    :
+
+    ldx #20
+    stx enemycooldown
+    ldy #0 
+
+@loop:
+    lda enemydata, y 
+    beq :+
+        iny
+        cpy #10 
+        bne @loop
+        rts
+    :
+    lda #1 
+    sta enemydata, y
+
+    tya 
+    asl 
+    asl 
+    asl 
+    asl 
+    clc 
+    adc #20 
+    tax 
+
+    lda #0 
+    sta oam, x 
+    sta oam + 4, x 
+    lda #8 
+    sta oam + 8, x 
+    sta oam + 12, x 
+
+    lda #8 
+    sta oam + 1,  x 
+    clc 
+    adc #1 
+    sta oam + 5, x 
+    adc #1 
+    sta oam + 9, x 
+    adc #1
+    sta oam + 13, x 
+
+    lda #%00000000
+    sta oam + 2, x 
+    sta oam + 6, x 
+    sta oam + 10, x 
+    sta oam + 14, x 
+
+    jsr rand 
+    and #%11110000
+    clc 
+    adc #48 
+    sta oam + 3, x 
+    sta oam + 11, x 
+    clc 
+    adc #8 
+    sta oam + 7, x 
+    sta oam + 15, x 
+
+    rts  
+.endproc
+
+;*****************************************************************
+;                       MOVE ENEMIES 
+;*****************************************************************
+.segment "CODE"
+.proc move_enemies 
+    ldy #0 
+    lda #0 
+@loop:
+    lda enemydata, Y
+    beq @skip
+    tya 
+    asl 
+    asl 
+    asl 
+    asl 
+    clc 
+    adc #20 
+    tax 
+
+    lda oam, x 
+    clc 
+    adc #1
+    cmp #196
+    bcc @nohitbottom
+    
+    lda #255 
+    sta oam, x 
+    sta oam + 4, x 
+    sta oam + 8, x 
+    sta oam + 12, x 
+    lda #0
+    sta enemydata, y 
+    jmp @skip 
+@nohitbottom:
+    sta oam, x
+    sta oam + 4, x 
+    clc 
+    adc #8
+    sta oam + 8, x 
+    sta oam + 12 , x 
+@skip:
+    iny 
+    cpy #10
+    bne @loop
+    rts
+.endproc
+
+
+;*****************************************************************
 ;                           MAIN 
 ;*****************************************************************
 .segment "CODE"
@@ -419,6 +639,21 @@ titleloop:
     lda gamepad 
     and #PAD_A | PAD_B | PAD_START | PAD_SELECT
     beq titleloop
+
+    lda time 
+    sta SEED0
+    lda time + 1 
+    sta SEED0 + 1 
+    jsr randomize
+    sbc time + 1 
+    sta SEED2 
+    jsr randomize
+    sbc time 
+    sta SEED2 + 1 
+
+    lda #1
+    sta level 
+    jsr setup_level
 
     jsr display_game_screen
 
@@ -463,6 +698,8 @@ mainloop:
 
     jsr player_actions
     jsr move_player_shoot
+    jsr spawn_enemies
+    jsr move_enemies
 
     jmp mainloop 
 .endproc

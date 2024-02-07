@@ -576,6 +576,9 @@ SEED2: .res 2
     sta ch1 
     lda #1 
     sta cw1 
+    
+    ldy #0
+    ldx #0
 @loop:
     lda enemydata, Y
     beq @skip

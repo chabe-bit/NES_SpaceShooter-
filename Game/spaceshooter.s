@@ -371,6 +371,25 @@ not_gamepad_a:
     rts
 .endproc
 
+;*****************************************************************
+;                        PLAYER SHOOT
+;*****************************************************************
+.segment "CODE"
+.proc move_player_shoot
+    lda oam + 16 
+    cmp #$FF
+    beq @exit 
+        sec 
+        sbc #4 
+        sta oam + 16 
+        bcs @exit 
+            lda #$FF
+            sta oam + 16 
+
+@exit:
+    rts
+
+.endproc
 
 ;*****************************************************************
 ;                           MAIN 
@@ -443,6 +462,7 @@ mainloop:
     sta lasttime 
 
     jsr player_actions
+    jsr move_player_shoot
 
     jmp mainloop 
 .endproc

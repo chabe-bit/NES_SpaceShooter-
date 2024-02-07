@@ -23,7 +23,7 @@
     lda #<value
     sta dest + 0
     lda #>value
-    sta des + 1
+    sta dest + 1
 
 .endmacro
 

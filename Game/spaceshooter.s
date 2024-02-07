@@ -54,8 +54,21 @@ palette: .res 32 ; Current palette buffer
 ;                          IRQ
 ;*****************************************************************
 .segment "CODE"
-irq: 
-    rti
+irq: rti
+
+;*****************************************************************
+;                        READ ONLY DATA
+;*****************************************************************
+.segment "RODATA"
+default_palette:
+.byte $0F, $15, $26, $37 ; background 0 set to purple/pink
+.byte $0F, $09, $19, $29 ; background 1 set to green
+.byte $0F, $01, $11, $21 ; background 2 set to blue
+.byte $0F, $00, $10, $30 ; backgtound 3 set to grey
+.byte $0F, $18, $28, $38 ; sprite 0 set to yellow
+.byte $0F, $14, $24, $34 ; sprite 1 set to purple 
+.byte $0F, $1B, $2B, $3B ; sprite 2 set to teal
+.byte $0F, $12, $22, $32 ; sprite 3 set to marine
 
 ;*****************************************************************
 ;                          NMI
@@ -100,18 +113,10 @@ irq:
     rti
 .endproc
 
+
 ;*****************************************************************
 ;                       ENTRY POINT
 ;*****************************************************************
-; In order to initialize the NES, we first need to make sure nothing is on, that everything is cleared. 
-; The PPU takes 29658 cycles before it's ready for any commands, so it's good practice to use a loop to wait 
-
-; First, we turn off all normal interrupts
-; Second, disable NMI signals
-; Third, disable the PPU 
-; Fourth, disable direct memory transfers
-; Fifth, disable the APU
-
 .segment "CODE"
 .proc reset ; .proc is to indicate the start of our code / .endproc is the end of our code
     sei                  ; Clears the interrupt flag
@@ -168,9 +173,80 @@ wait_vblank2:
     sta PPU_CONTROL
 
     jmp main
-        
 .endproc
 
+;*****************************************************************
+;                         WRITE TEXT  
+;*****************************************************************
+.segment "ZEROPAGE"
+
+text_address: .res 2
+
+.segment "CODE"
+.proc write_text
+    ldy #0
+
+loop: 
+    lda (text_address), y
+    beq exit
+    sta PPU_VRAM_IO
+    iny
+    jmp loop
+exit:
+    rts
+
+.endproc
+
+;*****************************************************************
+;                         TITLE SCREEN 
+;*****************************************************************
+.segment "ZEROPAGE"
+
+paddr: .res 2
+
+.segment "CODE"
+title_text:
+.byte "M E G A  B L A S T", 0
+
+press_play_text:
+.byte "PRESS FIRE TO START", 0
+
+title_attributes:
+.byte %00000101, %00000101, %00000101, %00000101
+.byte %00000101, %00000101, %00000101, %00000101
+
+.proc display_title_screen
+    jsr ppu_off 
+
+    jsr clear_nametable
+
+    vram_set_address (NAME_TABLE_0_ADDRESS + 4 * 32 + 6)
+    assign_16i text_address, title_text
+    jsr write_text
+
+    vram_set_address (NAME_TABLE_0_ADDRESS + 20 * 32 + 6)
+    assign_16i text_address, press_play_text
+    jsr write_text
+
+    vram_set_address (ATTRIBUTE_TABLE_0_ADDRESS + 8)
+    assign_16i paddr, title_attributes
+    ldy #0
+
+loop:
+    lda (paddr), Y
+    sta PPU_VRAM_IO
+    iny 
+    cpy #8
+    bne loop 
+
+    jsr ppu_update
+
+    rts
+.endproc
+
+;*****************************************************************
+;                         MAIN 
+;*****************************************************************
 .segment "CODE"
 .proc main
     ldx #0
@@ -182,6 +258,8 @@ paletteloop:
     cpx #32
     bcc paletteloop
 
+    jsr display_title_screen
+
     lda #VBLANK_NMI | BG_0000 | OBJ_1000
         sta ppu_ctl0
         lda #BG_ON | OBJ_ON
@@ -192,17 +270,3 @@ paletteloop:
 mainloop:
     jmp mainloop
 .endproc
-    
-;*****************************************************************
-;                        READ ONLY DATA
-;*****************************************************************
-.segment "RODATA"
-default_palette:
-.byte $0F, $15, $26, $37 ; background 0 set to purple/pink
-.byte $0F, $09, $19, $29 ; background 1 set to green
-.byte $0F, $01, $11, $21 ; background 2 set to blue
-.byte $0F, $00, $10, $30 ; backgtound 3 set to grey
-.byte $0F, $18, $28, $38 ; sprite 0 set to yellow
-.byte $0F, $14, $24, $34 ; sprite 1 set to purple 
-.byte $0F, $1B, $2B, $3B ; sprite 2 set to teal
-.byte $0F, $12, $22, $32 ; sprite 3 set to marine

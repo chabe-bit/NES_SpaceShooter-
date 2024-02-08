@@ -81,7 +81,6 @@ ppu_ctl1:		.res 1 ; PPU Control Register 2 Value
 
 .include "macros.s"
 
-
 ; At the end of the NMI routine, this function is called to rest the nmi_update flag
 .segment "CODE"
 .proc wait_frame
@@ -92,6 +91,9 @@ ppu_ctl1:		.res 1 ; PPU Control Register 2 Value
     rts
 .endproc
 
+;*****************************************************************
+;                       ENABLE PPU  
+;*****************************************************************
 ; Turns on rendering at the start of the next NMI routine
 .segment "CODE"
 .proc ppu_update
@@ -106,6 +108,9 @@ ppu_ctl1:		.res 1 ; PPU Control Register 2 Value
     rts
 .endproc
 
+;*****************************************************************
+;                       DISABLE PPU    
+;*****************************************************************
 ; Turns off rendering at the end of the the current render
 .segment "CODE"
 .proc ppu_off
@@ -121,6 +126,9 @@ ppu_ctl1:		.res 1 ; PPU Control Register 2 Value
     rts
 .endproc
 
+;*****************************************************************
+;                     CLEAR NAMETABLE  
+;*****************************************************************
 .segment "CODE"
 .proc clear_nametable
     lda PPU_STATUS 
@@ -149,6 +157,9 @@ ppu_ctl1:		.res 1 ; PPU Control Register 2 Value
     rts
 .endproc
 
+;*****************************************************************
+;                      GAMEPAD POLL  
+;*****************************************************************
 .segment "CODE"
 .proc gamepad_poll
     lda #1
@@ -172,5 +183,3 @@ ppu_ctl1:		.res 1 ; PPU Control Register 2 Value
         sta gamepad
         rts
 .endproc
-
-

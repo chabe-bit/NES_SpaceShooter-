@@ -82,6 +82,9 @@ animate: .res 1
 enemydata: .res 20 
 enemycooldown: .res 1
 temp: .res 10
+score: .res 3
+update: .res 1 
+highscore: .res 3
 
 .segment "CODE"
 .proc nmi
@@ -110,6 +113,15 @@ temp: .res 10
     cpx #32
     bcc @loop
 
+    lda #%00000001
+    bit update 
+    beq @skipscore 
+        jsr display_score
+        lda #%11111110
+        and update 
+        sta update
+
+@skipscore:
     lda #0
     sta PPU_VRAM_ADDRESS1
     sta PPU_VRAM_ADDRESS1
@@ -576,12 +588,14 @@ SEED2: .res 2
     sta ch1 
     lda #1 
     sta cw1 
-    
+
     ldy #0
     ldx #0
 @loop:
     lda enemydata, Y
-    beq @skip
+	beq :+
+		jmp @skip
+	:
     tya 
     asl 
     asl 
@@ -604,6 +618,17 @@ SEED2: .res 2
     sta oam + 12, x 
     lda #0
     sta enemydata, y 
+
+    clc 
+    lda score 
+    adc score + 1
+    adc score + 2 
+    bne :+ 
+        jmp @skip
+    :
+    
+    lda #1
+    jsr subtract_score
     jmp @skip 
 @nohitbottom:
     sta oam, x
@@ -635,10 +660,15 @@ SEED2: .res 2
     sta oam + 12, x 
     lda #0 
     sta enemydata, y 
+
+    lda #2 
+    jsr add_score
 @skip:
     iny 
     cpy #10
-    bne @loop
+	beq :+
+		jmp @loop
+	:
     rts
 .endproc
 
@@ -687,12 +717,168 @@ ch2: .res 1
 .endproc 
 
 ;*****************************************************************
+;                      ADD PLAYER SCORE  
+;*****************************************************************
+.segment "CODE"
+.proc add_score
+    clc 
+    adc score 
+    sta score 
+    cmp #99
+    bcc @skip 
+
+    sec 
+    sbc #100
+    sta score 
+    inc score + 1
+    lda score + 1
+    cmp #99
+    bcc @skip 
+
+    sec 
+    sbc #100
+    sta score + 1
+    inc score + 2
+    lda score + 2
+    cmp #99
+    bcc @skip 
+    sec 
+    sbc #100
+    sta score + 2
+
+@skip:
+    lda #%00000001
+    ora update 
+    sta update 
+    rts 
+.endproc
+
+;*****************************************************************
+;                    SUBTRACT PLAYER SCORE  
+;*****************************************************************
+.segment "CODE"
+.proc subtract_score 
+    sta temp 
+    sec 
+    lda score 
+    sbc temp 
+    sta score 
+    bcs @skip 
+
+    clc 
+    adc #100
+    sta score 
+    dec score + 1
+    bcs @skip
+
+    clc 
+    lda score + 1 
+    adc #100
+    sta score + 1
+    dec score + 2
+    bcs @skip 
+
+    lda #0
+    sta score + 2 
+    sta score + 1 
+    sta score 
+
+@skip:
+    lda #%00000001
+    ora update 
+    sta update 
+    rts
+.endproc
+
+;*****************************************************************
+;                     DEC99 to BYTES 
+;*****************************************************************
+.segment "CODE"
+.proc dec99_to_bytes
+    ldx #0
+    cmp #50
+    bcc try20
+    sbc #50
+    ldx #5
+    bne try20
+
+div20:
+    inx
+    inx 
+    sbc #20 
+
+try20:
+    cmp #20 
+    bcs div20 
+
+try10:
+    cmp #10
+    bcc @finished 
+    sbc #10
+    inx 
+
+@finished:
+    rts
+.endproc
+
+;*****************************************************************
+;                      DISPLAY SCORE 
+;*****************************************************************
+.segment "CODE"
+.proc display_score 
+    vram_set_address (NAME_TABLE_0_ADDRESS + 27 * 32 + 6)
+
+    lda score + 2 
+    jsr dec99_to_bytes
+    stx temp 
+    sta temp + 1
+
+    lda score + 1 
+    jsr dec99_to_bytes
+    stx temp + 2 
+    sta temp + 3
+
+    lda score 
+    jsr dec99_to_bytes
+    stx temp + 4
+    sta temp + 5 
+    ldx #0
+@loop:
+    lda temp, x 
+    clc 
+    adc #48
+    sta PPU_VRAM_IO
+    inx 
+    cpx #6
+    bne @loop 
+    lda #48
+    sta PPU_VRAM_IO
+
+    vram_clear_address
+    rts
+.endproc 
+
+
+;*****************************************************************
+;                   DISPLAY HIGH SCORE 
+;*****************************************************************
+.segment "CODE"
+.proc display_highscore
+    vram_set_address (NAME_TABLE_0_ADDRESS + 1 * 32 + 13)
+
+    lda highscore + 2 
+    
+.endproc 
+
+;*****************************************************************
 ;                           MAIN 
 ;*****************************************************************
 .segment "CODE"
 .proc main
     ldx #0
 
+    lda #1
+    sta highscore + 1
 paletteloop:
     lda default_palette, x 
     sta palette, x 
@@ -730,6 +916,11 @@ titleloop:
     sta level 
     jsr setup_level
 
+    lda #0
+    sta score
+    sta score + 1 
+    sta score + 2
+    
     jsr display_game_screen
 
     lda #192 

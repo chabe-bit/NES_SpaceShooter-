@@ -66,7 +66,8 @@ default_palette:
 .byte $0F, $01, $11, $21 ; background 2 set to blue
 .byte $0F, $00, $10, $30 ; backgtound 3 set to grey
 .byte $0F, $18, $28, $38 ; sprite 0 set to yellow
-.byte $0F, $14, $24, $34 ; sprite 1 set to purple 
+.byte $0F, $14, $24, $34 ; sprite 1 set to purple
+.byte $0F, $26, $28, $17 ; sprite 1 set to purple
 .byte $0F, $1B, $2B, $3B ; sprite 2 set to teal
 .byte $0F, $12, $22, $32 ; sprite 3 set to marine
 
@@ -85,8 +86,13 @@ temp: .res 10
 score: .res 3
 update: .res 1 
 highscore: .res 3
+lives: .res 1 
+player_dead: .res 1 
 
 .segment "CODE"
+gameovertext: 
+.byte " G A M E  O V E R", 0
+
 .proc nmi
     pha 
     txa
@@ -122,6 +128,32 @@ highscore: .res 3
         sta update
 
 @skipscore:
+	lda #%00000010 ; has the high score updated?
+	bit update
+	beq @skiphighscore
+		jsr display_highscore ; display high score
+		lda #%11111101 ; reset high score update flag
+		and update
+		sta update
+@skiphighscore:
+	lda #%00000100 ; display the players lives
+	bit update
+	beq @skiplives
+		jsr display_lives
+		lda #%11111011
+		and update
+		sta update
+@skiplives:
+	lda #%00001000 ; does the game over message need to be displayed?
+	bit update
+	beq @skipgameover
+		vram_set_address (NAME_TABLE_0_ADDRESS + 14 * 32 + 7)
+		assign_16i text_address, gameovertext 
+		jsr write_text
+		lda #%11110111 ; reset game over message update flag
+		and update
+		sta update
+@skipgameover:
     lda #0
     sta PPU_VRAM_ADDRESS1
     sta PPU_VRAM_ADDRESS1
@@ -325,12 +357,102 @@ loop3:
     jsr ppu_update
     rts
 .endproc
+;*****************************************************************
+;                      PLAYER SPRITE
+;*****************************************************************
+.segment "CODE"
+.proc display_player
+    lda #192 
+
+    sta oam
+    sta oam + 4
+    lda #200
+    sta oam + 8 
+    sta oam + 12 
+
+    ldx #0 
+    stx oam + 1
+    inx 
+    stx oam + 5
+    inx 
+    stx oam + 9
+    inx 
+    stx oam + 13 
+
+    lda #%00000000
+    sta oam + 2
+    sta oam + 6 
+    sta oam + 10 
+    sta oam + 14 
+
+    lda #120
+    sta oam + 3 
+    sta oam + 11 
+    lda #128
+    sta oam + 7
+    sta oam + 15 
+.endproc 
 
 ;*****************************************************************
 ;                      PLAYER MOVEMENT
 ;*****************************************************************
 .segment "CODE"
 .proc player_actions
+    ; Check if player is dead 
+    lda player_dead
+    beq @continue 
+    cmp #1
+    bne @notstep1 
+    ldx #20 
+    jsr set_player_shape
+    lda #$00000001
+    sta oam + 2 
+    sta oam + 6 
+    sta oam + 10 
+    sta oam + 14 
+    jmp @nextstep 
+
+@notstep1:
+    cmp #5 
+    bne @notstep2 
+    ldx #24 
+    jsr set_player_shape
+    jmp @nextstep
+
+@notstep2:
+    cmp #10 
+    bne @notstep3 
+    ldx #28 
+    jsr set_player_shape
+    jmp @nextstep
+
+@notstep3:
+    cmp #15
+    bne @notstep4 
+    ldx #32 
+    jsr set_player_shape
+    jmp @nextstep
+
+@notstep4:
+    cmp #20 
+    bne @nextstep 
+    lda lives 
+    cmp #0
+    bne @notgameover 
+    rts
+
+@notgameover:
+    jsr setup_level
+    jsr display_player
+    lda #0 
+    sta player_dead 
+    rts 
+
+@nextstep:
+    inc player_dead 
+    rts 
+
+@continue:
     jsr gamepad_poll
     lda gamepad 
     and #PAD_L
@@ -483,6 +605,14 @@ SEED2: .res 2
     bne @loop 
     lda #20 ; set intial enemy cooldown 
     sta enemycooldown
+
+    lda #$FF
+    ldx #0
+@loop2:
+    sta oam + 20, x 
+    inx 
+    cpx #160 
+    bne @loop2 
     rts
 .endproc 
 
@@ -638,6 +768,44 @@ SEED2: .res 2
     sta oam + 8, x 
     sta oam + 12 , x 
 
+    lda player_dead
+    cmp# 0
+    bne @notlevelwithplayer 
+    lda oam, x 
+    clc 
+    adc #14
+    cmp #204 
+    bcc @notlevelwithplayer
+
+    lda oam + 3 
+    clc 
+    adc #12 
+    cmp oam + 3, x 
+    bcc @notlevelwithplayer
+
+    lda oam + 3, x 
+    clc 
+    adc #12 
+    cmp oam + 3, x 
+    bcc @notlevelwithplayer
+
+    dec lives 
+    lda #%00000100
+    ora update 
+    sta update 
+
+    lda #1 
+    sta player_dead
+
+    lda #$FF 
+    sta oam, x 
+    sta oam + 4, x 
+    sta oam + 8, x
+    sta oam + 12, x 
+    lda #0 
+    sta enemydata, y 
+    jmp @skip
+@notlevelwithplayer:
     lda oam + 16 
     cmp #$FF
     beq@skip
@@ -750,7 +918,30 @@ ch2: .res 1
     lda #%00000001
     ora update 
     sta update 
-    rts 
+
+    lda highscore + 2
+    cmp score + 2 
+    bcc @highscore
+    bne @nothighscore 
+
+    lda highscore + 1 
+    cmp score + 1 
+    bcc @highscore
+    bne @nothighscore
+
+@highscore:
+    lda score 
+    sta highscore
+    lda score + 1 
+    sta highscore + 1
+    lda score + 2
+    sta highscore + 2 
+
+    lda #%00000010
+    ora update 
+    sta update 
+@nothighscore:
+    rts    
 .endproc
 
 ;*****************************************************************
@@ -871,6 +1062,98 @@ try10:
 .endproc 
 
 ;*****************************************************************
+;                      SET PLAYER SHAPE  
+;*****************************************************************
+.segment "CODE"
+.proc set_player_shape 
+    stx oam + 1
+    inx 
+    stx oam + 5 
+    inx 
+    stx oam + 9
+    inx 
+    stx oam + 13 
+    rts 
+.endproc 
+
+;*****************************************************************
+;                       CLEAR SPRITES  
+;*****************************************************************
+.segment "CODE"
+.proc clear_sprites 
+    lda #255 
+    ldx #0 
+clear_oam:
+    sta oam, x 
+    inx 
+    inx 
+    inx 
+    inx 
+    bne clear_oam
+    rts
+.endproc 
+
+;*****************************************************************
+;                       DISPLAY LIVES 
+;*****************************************************************
+.segment "CODE"
+.proc display_lives
+    vram_set_address (NAME_TABLE_0_ADDRESS + 27 * 32 + 14)
+    ldx lives 
+    beq @skip 
+    and #%00000111
+@loop:
+    lda #5
+    sta PPU_VRAM_IO
+    lda #6 
+    sta PPU_VRAM_IO
+    dex 
+    bne @loop 
+@skip:
+    lda #8
+    sec 
+    sbc lives 
+    bcc @skip2 
+    tax 
+    lda #0 
+@loop2:
+    sta PPU_VRAM_IO
+    sta PPU_VRAM_IO
+    dex 
+    bne @loop2
+@skip2:
+    vram_set_address (NAME_TABLE_0_ADDRESS + 28 * 32 + 14)
+	ldx lives
+	beq @skip3 ; no lives to display
+	and #%00000111 ; limit to a max of 8
+@loop3:
+	lda #7
+	sta PPU_VRAM_IO
+	lda #8
+	sta PPU_VRAM_IO
+	dex
+	bne @loop3	
+
+@skip3:
+	lda #8 ; blank out the remainder of the row
+	sec
+	sbc lives
+	bcc @skip4
+	tax
+	lda #0
+@loop4:
+	sta PPU_VRAM_IO
+	sta PPU_VRAM_IO
+	dex
+	bne @loop4
+@skip4:
+
+	rts
+
+.endproc 
+
+
+;*****************************************************************
 ;                           MAIN 
 ;*****************************************************************
 .segment "CODE"
@@ -886,6 +1169,8 @@ paletteloop:
     cpx #32
     bcc paletteloop
 
+resetgame:
+    jsr clear_sprites
     jsr display_title_screen
 
     lda #VBLANK_NMI | BG_0000 | OBJ_1000
@@ -920,38 +1205,15 @@ titleloop:
     sta score
     sta score + 1 
     sta score + 2
+
+    lda #5
+    sta lives 
+    lda #0
+    sta player_dead
     
     jsr display_game_screen
 
-    lda #192 
-
-    sta oam
-    sta oam + 4
-    lda #200
-    sta oam + 8 
-    sta oam + 12 
-
-    ldx #0 
-    stx oam + 1
-    inx 
-    stx oam + 5
-    inx 
-    stx oam + 9
-    inx 
-    stx oam + 13 
-
-    lda #%00000000
-    sta oam + 2
-    sta oam + 6 
-    sta oam + 10 
-    sta oam + 14 
-
-    lda #120
-    sta oam + 3 
-    sta oam + 11 
-    lda #128
-    sta oam + 7
-    sta oam + 15 
+    jsr display_player
 
     jsr ppu_update
 mainloop:
@@ -962,6 +1224,22 @@ mainloop:
     
     sta lasttime 
 
+    lda lives 
+    bne @notgameover
+    lda player_dead
+    cmp #1 
+    beq @notgameover
+    cmp #240 
+    beq resetgame 
+    cmp #20
+    bne @notgameoversetup 
+    lda #%00001000
+    ora update 
+    sta update 
+@notgameoversetup:
+    inc player_dead 
+    jmp mainloop 
+@notgameover:
     jsr player_actions
     jsr move_player_shoot
     jsr spawn_enemies

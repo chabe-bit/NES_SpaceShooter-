@@ -1,18 +1,18 @@
-@del example.o
-@del example.nes
-@del example.map.txt
-@del example.labels.txt
-@del example.nes.ram.nl
-@del example.nes.0.nl
-@del example.nes.1.nl
-@del example.nes.dbg
+@del spaceshooter.o
+@del spaceshooter.nes
+@del spaceshooter.map.txt
+@del spaceshooter.labels.txt
+@del spaceshooter.nes.ram.nl
+@del spaceshooter.nes.0.nl
+@del spaceshooter.nes.1.nl
+@del *.nes.dbg
 @echo.
 @echo Compiling...
-\cc65\bin\ca65 example.s -g -o example.o
+\cc65\bin\ca65 spaceshooter.s -g -o spaceshooter.o
 @IF ERRORLEVEL 1 GOTO failure
 @echo.
 @echo Linking...
-\cc65\bin\ld65 -o example.nes -C example.cfg example.o -m example.map.txt -Ln example.labels.txt --dbgfile example.nes.dbg
+\cc65\bin\ld65 -o spaceshooter.nes -C spaceshooter.cfg spaceshooter.o -m spaceshooter.map.txt -Ln spaceshooter.labels.txt --dbgfile spaceshooter.nes.dbg
 @IF ERRORLEVEL 1 GOTO failure
 @echo.
 @echo Success!
